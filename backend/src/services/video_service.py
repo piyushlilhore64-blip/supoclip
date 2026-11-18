@@ -32,6 +32,7 @@ from ..youtube_proxy import (
     DownloadBudgetExceeded,
     PartialDownloadUnavailable,
     YouTubeAgeRestrictedError,
+    YouTubeBotCheckError,
     YouTubeGeoRestrictedError,
     proxy_configured,
     public_download_error,
@@ -1388,7 +1389,7 @@ class VideoService:
                     video_info = await async_get_youtube_video_info(
                         url, task_id=task_id, budget=job_budget,
                     )
-                except YouTubeGeoRestrictedError as exc:
+                except (YouTubeGeoRestrictedError, YouTubeBotCheckError) as exc:
                     # A retry already passed admission. Metadata failure must
                     # not prevent reuse of saved media or independent providers.
                     metadata_error = exc

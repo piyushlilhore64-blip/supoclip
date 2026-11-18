@@ -471,6 +471,13 @@ def fetch_youtube_player_metadata(url: str) -> Optional[Dict[str, Any]]:
         return None
 
     status = result.get("status")
+    if status != youtube_innertube.STATUS_OK:
+        logger.info(
+            "YouTube player probe for %s reported %s (%s)",
+            video_id,
+            status,
+            str(result.get("reason") or "")[:120],
+        )
     if status == youtube_innertube.STATUS_BOT_CHECK:
         raise YouTubeBotCheckError(str(result.get("reason") or ""))
     if status == youtube_innertube.STATUS_AGE_RESTRICTED:
@@ -519,6 +526,9 @@ def get_youtube_video_info(
     providers = [primary_provider, secondary_provider]
     last_error: Optional[Exception] = None
     geo_error: Optional[Exception] = None
+    # Kept apart from last_error: the secondary provider often fails for its own
+    # reason (a missing Data API key), which would hide the sign-in gate.
+    bot_check_error: Optional[Exception] = None
     # A result without a usable length. The other provider gets one try
     # (same deadline) before this is returned and the caller fails closed.
     incomplete: Optional[Dict[str, Any]] = None
@@ -570,6 +580,8 @@ def get_youtube_video_info(
             return video_info
         except Exception as exc:
             last_error = exc
+            if is_bot_check_error(exc) and bot_check_error is None:
+                bot_check_error = exc
             if is_geo_restricted_error(exc):
                 geo_error = exc
             if index == 0:
@@ -594,6 +606,10 @@ def get_youtube_video_info(
         logger.warning("YouTube video info fetch failed for %s: %s", video_id, last_error)
         if errors is not None:
             errors.append(public_download_error(last_error))
+    if bot_check_error is not None:
+        # Not a generic failure: the video needs a signed-in session, and the
+        # caller turns this into the cookies guidance instead of "try again".
+        raise YouTubeBotCheckError(public_download_error(bot_check_error)) from bot_check_error
     if deadline is not None and time.monotonic() >= deadline:
         raise TimeoutError("YouTube metadata deadline exceeded") from last_error
     if geo_error is not None:

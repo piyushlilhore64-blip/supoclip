@@ -750,3 +750,50 @@ def test_proxy_adoption_removes_owned_directory_and_keeps_sidecar(tmp_path, monk
         assert not stage.exists()
     finally:
         set_config_override(None)
+
+
+def _raising(message):
+    def _raise(*_args, **_kwargs):
+        raise RuntimeError(message)
+
+    return _raise
+
+
+def test_bot_check_survives_the_provider_fallbacks(monkeypatch):
+    """The gate must reach the caller; a missing Data API key used to hide it."""
+    from src import youtube_utils
+    from src.youtube_proxy import YouTubeBotCheckError
+
+    monkeypatch.setattr(
+        youtube_utils,
+        "_fetch_video_info_with_ytdlp",
+        _raising("ERROR: [youtube] jNQXAC9IVRw: Sign in to confirm you\u2019re not a bot."),
+    )
+    monkeypatch.setattr(
+        youtube_utils,
+        "_fetch_video_info_with_youtube_data_api",
+        _raising("Missing YOUTUBE_DATA_API_KEY and GOOGLE_API_KEY"),
+    )
+
+    with pytest.raises(YouTubeBotCheckError):
+        youtube_utils.get_youtube_video_info("https://www.youtube.com/watch?v=jNQXAC9IVRw")
+
+
+def test_metadata_without_a_length_still_wins_over_the_bot_check(monkeypatch):
+    from src import youtube_utils
+
+    monkeypatch.setattr(
+        youtube_utils,
+        "_fetch_video_info_with_ytdlp",
+        _raising("ERROR: [youtube] x: Sign in to confirm you\u2019re not a bot."),
+    )
+    monkeypatch.setattr(
+        youtube_utils,
+        "_fetch_video_info_with_youtube_data_api",
+        lambda *_args, **_kwargs: {"id": "x", "title": "A title", "duration": None},
+    )
+
+    info = youtube_utils.get_youtube_video_info("https://www.youtube.com/watch?v=jNQXAC9IVRw")
+
+    assert info["title"] == "A title"
+    assert info["duration"] is None
