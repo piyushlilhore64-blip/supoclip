@@ -22,6 +22,7 @@ RUNTIME_SETTING_KEYS: tuple[str, ...] = (
     "OLLAMA_BASE_URL",
     "OLLAMA_API_KEY",
     "YOUTUBE_DATA_API_KEY",
+    "YOUTUBE_COOKIES",
     "APIFY_API_TOKEN",
     "PEXELS_API_KEY",
 )

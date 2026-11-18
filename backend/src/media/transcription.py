@@ -7,6 +7,7 @@ from typing import Optional
 from pathlib import Path
 import assemblyai as aai
 from ..config import get_config
+from ..youtube_cookies import youtube_cookiefile
 import httpx
 import json
 import re
@@ -281,6 +282,10 @@ def transcribe_with_youtube_captions(video_url: str) -> Optional[str]:
             "skip_download": True,
             "outtmpl": str(temp_dir / video_id),
         }
+        cookiefile = youtube_cookiefile(str(temp_dir))
+        if cookiefile:
+            # Caption tracks sit behind the same bot check as the media.
+            ydl_opts["cookiefile"] = cookiefile
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([video_url])
 

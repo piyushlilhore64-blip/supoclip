@@ -2,6 +2,19 @@
 
 SupoClip can download YouTube media with `yt-dlp` through a residential proxy, then keep that media so later edits do not fetch it again. The proxy path is off until `YOUTUBE_PROXY_URL` is set. A datacenter IP (the production host is in this situation) gets YouTube's "Sign in to confirm you're not a bot" page from plain `yt-dlp`.
 
+## Free fix: a signed-in cookie export
+
+`YOUTUBE_COOKIES` (or the same field in Admin settings) sends a browser session with the metadata preflight and with every yt-dlp download, with or without a proxy. It costs nothing and needs no third-party account.
+
+1. Open youtube.com in a desktop browser and sign in.
+2. Export cookies for youtube.com with a cookies.txt extension, or copy the JSON export from Cookie-Editor.
+3. Paste the export into Admin settings → YouTube cookies, or set `YOUTUBE_COOKIES` (the raw text, base64 of it, or the JSON array).
+4. Try a link that previously failed. No redeploy or restart is needed; the settings cache reloads after saving.
+
+The value must include youtube.com or google.com session cookies (`SID`, `__Secure-3PSID`, `LOGIN_INFO`, and similar). Visitor-only exports are rejected up front, because they do not pass the gate. Cookies expire when the browser session ends or the account signs out everywhere; when YouTube starts rejecting them, the app says the saved cookies are no longer valid and the answer is a fresh export.
+
+Running the worker on a home connection is the other free option, since a residential IP is usually not challenged at all. Set `EMBED_WORKER=0` on the hosted API and point a worker at the same database, Redis, and media bucket as described in [render-worker.md](./render-worker.md).
+
 ## What a configured job does
 
 1. A sticky proxy session, forced over IPv4; a transient transport failure can rotate the session for that failed download.

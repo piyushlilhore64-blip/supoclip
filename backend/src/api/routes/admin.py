@@ -67,6 +67,15 @@ SETTING_METADATA = {
         "description": "Optional metadata provider key.",
         "input_type": "password",
     },
+    "YOUTUBE_COOKIES": {
+        "label": "YouTube cookies",
+        "description": (
+            "Cookies exported from a browser signed in to youtube.com. Passes "
+            "YouTube's \"sign in to confirm you're not a bot\" check from a hosted "
+            "server. Paste a cookies.txt file, base64 of one, or a JSON cookie array."
+        ),
+        "input_type": "textarea",
+    },
     "APIFY_API_TOKEN": {
         "label": "Apify API token",
         "description": "Optional YouTube download fallback provider token.",

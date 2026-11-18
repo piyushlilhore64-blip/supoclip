@@ -74,6 +74,9 @@ class Config:
         self.stream_download_max_seconds = self._get_int_env("STREAM_DOWNLOAD_MAX_SECONDS", 2400)
         self.youtube_proxy_country = os.getenv("YOUTUBE_PROXY_COUNTRY", "").strip()
         self.youtube_pot_provider_url = os.getenv("YOUTUBE_POT_PROVIDER_URL", "").strip()
+        # A signed-in browser session, which is what passes YouTube's bot check
+        # from a hosted server. Accepts cookies.txt text, base64, or JSON.
+        self.youtube_cookies = self._get_runtime_setting("YOUTUBE_COOKIES")
         self.youtube_download_max_bytes = self._get_int_env("YOUTUBE_DOWNLOAD_MAX_BYTES", 2_000_000_000)
         self.youtube_section_padding_seconds = self._get_float_env("YOUTUBE_SECTION_PADDING_SECONDS", 10.0)
         self.youtube_max_height = self._get_int_env("YOUTUBE_MAX_HEIGHT", 1080)
@@ -405,6 +408,7 @@ class Config:
             "OLLAMA_BASE_URL": self.ollama_base_url,
             "OLLAMA_API_KEY": self.ollama_api_key,
             "YOUTUBE_DATA_API_KEY": self.youtube_data_api_key,
+            "YOUTUBE_COOKIES": self.youtube_cookies,
             "APIFY_API_TOKEN": self.apify_api_token,
             "PEXELS_API_KEY": self.pexels_api_key,
         }

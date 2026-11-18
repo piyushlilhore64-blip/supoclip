@@ -11,7 +11,7 @@ export type RuntimeSetting = {
   key: string;
   label: string;
   description: string;
-  input_type: "password" | "text";
+  input_type: "password" | "text" | "textarea";
   source: "environment" | "admin" | "unset";
   configured: boolean;
   has_admin_value: boolean;
@@ -131,21 +131,40 @@ export function RuntimeSettingsForm({ settings }: RuntimeSettingsFormProps) {
             </div>
 
             <div>
-              <input
-                type={setting.input_type}
-                value={values[setting.key] ?? ""}
-                onChange={(event) =>
-                  setValues((current) => ({
-                    ...current,
-                    [setting.key]: event.target.value,
-                  }))
-                }
-                placeholder={
-                  setting.configured ? t("runtime.hiddenValue") : t("runtime.addValue")
-                }
-                className="h-9 w-full rounded-lg border bg-background px-3 text-sm outline-none transition-shadow placeholder:text-muted-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                autoComplete="off"
-              />
+              {setting.input_type === "textarea" ? (
+                <textarea
+                  value={values[setting.key] ?? ""}
+                  onChange={(event) =>
+                    setValues((current) => ({
+                      ...current,
+                      [setting.key]: event.target.value,
+                    }))
+                  }
+                  placeholder={
+                    setting.configured ? t("runtime.hiddenValue") : t("runtime.addValue")
+                  }
+                  rows={4}
+                  spellCheck={false}
+                  className="w-full resize-y rounded-lg border bg-background px-3 py-2 font-mono text-xs outline-none transition-shadow placeholder:font-sans placeholder:text-sm placeholder:text-muted-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  autoComplete="off"
+                />
+              ) : (
+                <input
+                  type={setting.input_type}
+                  value={values[setting.key] ?? ""}
+                  onChange={(event) =>
+                    setValues((current) => ({
+                      ...current,
+                      [setting.key]: event.target.value,
+                    }))
+                  }
+                  placeholder={
+                    setting.configured ? t("runtime.hiddenValue") : t("runtime.addValue")
+                  }
+                  className="h-9 w-full rounded-lg border bg-background px-3 text-sm outline-none transition-shadow placeholder:text-muted-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  autoComplete="off"
+                />
+              )}
               <p className="mt-1 text-xs text-muted-foreground">{setting.description}</p>
               {setting.overridden_by_env && (
                 <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">

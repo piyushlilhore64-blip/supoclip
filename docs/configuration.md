@@ -486,6 +486,7 @@ Plain `yt-dlp` from a datacenter IP is often stopped with "Sign in to confirm yo
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
+| `YOUTUBE_COOKIES` | empty | Cookies from a browser signed in to youtube.com. Free fix for the bot check; also settable in Admin settings. |
 | `YOUTUBE_PROXY_URL` | empty | Proxy template. `{session}` becomes a per-job sticky id. `{country}` is optional. |
 | `YOUTUBE_PROXY_COUNTRY` | empty | Two-letter country code substituted into `{country}`. Other values are ignored. |
 | `YOUTUBE_POT_PROVIDER_URL` | empty | bgutil HTTP base URL, for example `http://bgutil:4416`. |
@@ -496,6 +497,20 @@ Plain `yt-dlp` from a datacenter IP is often stopped with "Sign in to confirm yo
 | `YOUTUBE_SOURCE_CACHE_TTL_SECONDS` | `604800` | Age after which unused cache directories are removed. |
 
 With a proxy set, a job downloads modest audio first, picks clips, then fetches only the padded ranges at or below 1080p. Section bytes go through yt-dlp's own HTTP client. ffmpeg only trims files that are already local, because ffmpeg does not route SOCKS proxies and mishandles authenticated HTTP proxies.
+
+### YouTube cookies (free alternative to a proxy)
+
+`YOUTUBE_COOKIES` sends a signed-in browser session with every YouTube request, so the bot check stops returning `LOGIN_REQUIRED`. It applies to the length preflight and to the download, and works with or without a proxy. Admin settings has the same field, stored encrypted in `app_settings`, so the value can be updated without redeploying.
+
+Accepted values:
+
+- The text of a Netscape `cookies.txt` export, pasted as-is
+- Base64 of that text, for a single-line field or a shell variable
+- A JSON cookie array from Cookie-Editor or EditThisCookie
+
+The value must contain youtube.com or google.com cookies plus a session cookie such as `SID`, `__Secure-3PSID`, or `LOGIN_INFO`. A visitor-only export is rejected with a message instead of failing later with the same bot check. Cookies are written to a `0600` file under `TEMP_DIR/youtube-cookies/` and refreshed when the value changes; export them again when YouTube says the session is no longer valid.
+
+When the bot check still stops a task, creation returns HTTP 503 `YOUTUBE_BOT_CHECK` with the reason (no cookies, unusable cookies, or an expired session) instead of a generic failure. A worker download that hits the same gate fails with the cookie guidance rather than a retry that cannot succeed.
 
 ## Apify YouTube Downloader
 
@@ -536,7 +551,7 @@ YouTube metadata lookup is configurable independently from the download provider
 Behavior notes:
 
 - `yt_dlp` preserves the current metadata preflight behavior.
-- Task creation gives that lookup `YOUTUBE_PREFLIGHT_TIMEOUT_SECONDS` (default 30, the same budget Twitch and Kick already use). Metadata requests and region retries share this deadline, with time reserved for the alternate metadata provider. A timeout returns HTTP 503 `VIDEO_METADATA_TIMEOUT` and does not create a task or use minutes. An exhausted regional restriction returns HTTP 422 `YOUTUBE_GEO_RESTRICTED` with upload guidance. An age-restricted video (Data API `contentRating.ytRating = ytAgeRestricted`, or yt-dlp `age_limit` ≥ 18) returns HTTP 422 `YOUTUBE_AGE_RESTRICTED` with upload guidance: no download provider can fetch it without a signed-in account. A task resumed on such a video fails in the worker before any download with `error_code = youtube_age_restricted`. Other metadata failures return `VIDEO_METADATA_UNAVAILABLE`.
+- Task creation gives that lookup `YOUTUBE_PREFLIGHT_TIMEOUT_SECONDS` (default 30, the same budget Twitch and Kick already use). Metadata requests and region retries share this deadline, with time reserved for the alternate metadata provider. A timeout returns HTTP 503 `VIDEO_METADATA_TIMEOUT` and does not create a task or use minutes. An exhausted regional restriction returns HTTP 422 `YOUTUBE_GEO_RESTRICTED` with upload guidance. An age-restricted video (Data API `contentRating.ytRating = ytAgeRestricted`, or yt-dlp `age_limit` ≥ 18) returns HTTP 422 `YOUTUBE_AGE_RESTRICTED` with upload guidance: no download provider can fetch it without a signed-in account. YouTube's sign-in/bot gate returns HTTP 503 `YOUTUBE_BOT_CHECK` naming `YOUTUBE_COOKIES` as the fix, and rejected cookies report why they were rejected. A task resumed on such a video fails in the worker before any download with `error_code = youtube_age_restricted`. Other metadata failures return `VIDEO_METADATA_UNAVAILABLE`.
 - On Apple Silicon, the default `BACKEND_PLATFORM=linux/amd64` runs this lookup under emulation, and yt-dlp's deno step can use most of the 30 seconds. Raise the timeout (for example to 60) or set `BACKEND_PLATFORM=linux/arm64` with `BACKEND_CPU_ONLY=true` and rebuild the backend and worker. See [setup](./setup.md).
 - `youtube_data_api` uses YouTube Data API v3 `videos.list` as the primary metadata source.
 - If `YOUTUBE_DATA_API_KEY` is empty, the backend tries `GOOGLE_API_KEY` for YouTube Data API requests.

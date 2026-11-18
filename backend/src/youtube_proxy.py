@@ -27,6 +27,7 @@ from urllib.parse import urljoin, urlsplit
 from .config import get_config
 from .download_progress import DownloadRecovery, report_download_recovery
 from .media.source_limits import contain_raw_aac
+from .youtube_cookies import youtube_cookiefile
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +54,20 @@ class YouTubeGeoRestrictedError(YouTubeDownloadError):
             "This YouTube video has regional restrictions, and we could not download it. "
             "Upload the video file or choose a different source."
         )
+
+
+class YouTubeBotCheckError(YouTubeDownloadError):
+    """YouTube wants a signed-in session that this server does not have."""
+
+    def __init__(self, detail: str = ""):
+        message = (
+            "YouTube asked this server to confirm it isn't a bot, and it has no "
+            "working signed-in session for this video. Add or refresh the YouTube "
+            "cookies in Admin settings, or upload the video file instead."
+        )
+        if detail:
+            message = f"{message} ({detail})"
+        super().__init__(message)
 
 
 class YouTubeAgeRestrictedError(YouTubeDownloadError):
@@ -308,6 +323,25 @@ def public_download_error(exc: BaseException | str) -> str:
     return text[:500]
 
 
+_BOT_CHECK_MARKERS = (
+    "sign in to confirm",
+    "confirm you're not a bot",
+    "not a bot. this helps protect",
+    "cookies are no longer valid",
+    "the provided youtube account cookies",
+)
+
+
+def is_bot_check_error(exc: BaseException | str) -> bool:
+    """True for YouTube's sign-in/bot gate and rejected-cookie replies.
+
+    Both mean the same thing operationally: the request needs a signed-in
+    session, so the fix is fresh YouTube cookies rather than a retry.
+    """
+    text = str(exc).lower().replace("\u2019", "'").replace("\u2018", "'")
+    return any(marker in text for marker in _BOT_CHECK_MARKERS)
+
+
 def is_forbidden_media_error(exc: BaseException) -> bool:
     """True for HTTP 403 and yt-dlp's ``unable to download video data`` failures.
 
@@ -406,6 +440,11 @@ def base_proxy_params(task_id: Optional[str] = None, video_id: Optional[str] = N
             "Accept-Language": "en-US,en;q=0.9",
         },
     }
+    cookiefile = youtube_cookiefile()
+    if cookiefile:
+        # Cookies travel with the request, so they help through a proxy too:
+        # YouTube then sees a signed-in session rather than an anonymous proxy IP.
+        params["cookiefile"] = cookiefile
     pot_url = (getattr(runtime, "youtube_pot_provider_url", "") or "").strip()
     if pot_url:
         params["extractor_args"] = {

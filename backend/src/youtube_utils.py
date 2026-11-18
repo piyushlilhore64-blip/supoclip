@@ -22,6 +22,7 @@ from .apify_youtube_downloader import ApifyDownloadError, download_video_via_api
 from .config import get_config
 from .download_progress import DownloadRecovery, report_download_recovery
 from .media.ffmpeg import ffprobe_video_size
+from .youtube_cookies import youtube_cookiefile
 from .youtube_proxy import (
     YOUTUBE_DOWNLOAD_PROVIDER_YTDLP_PROXY,
     ByteBudget,
@@ -30,8 +31,10 @@ from .youtube_proxy import (
     download_full_with_proxy,
     extract_video_info_with_proxy,
     extract_video_info,
+    YouTubeBotCheckError,
     YouTubeDownloadError,
     YouTubeGeoRestrictedError,
+    is_bot_check_error,
     is_geo_restricted_error,
     log_youtube_attempt,
     proxy_configured,
@@ -90,6 +93,9 @@ class YouTubeDownloader:
             "quiet": True,
             "no_warnings": False,  # Show warnings but not info
             "ignoreerrors": False,
+            # Same signed-in session as the metadata preflight. yt-dlp refreshes
+            # its own copy in TEMP_DIR, so the configured value stays untouched.
+            **({"cookiefile": cookiefile} if (cookiefile := youtube_cookiefile()) else {}),
             # Enhanced headers to avoid 403 errors
             "http_headers": {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -128,6 +134,11 @@ def _build_info_options(task_id: Optional[str] = None) -> Dict[str, Any]:
         },
         "nocheckcertificate": True,
     }
+    cookiefile = youtube_cookiefile()
+    if cookiefile:
+        # A signed-in session is what answers YouTube's bot check from a
+        # datacenter IP; without it the lookup fails for most videos.
+        ydl_opts["cookiefile"] = cookiefile
     if proxy_configured():
         # Metadata must leave through the same proxy as the media, or YouTube
         # bot-checks the server IP before a download starts. No player client
@@ -865,6 +876,10 @@ def download_youtube_video(
     logger.error("All YouTube download providers failed for %s", url)
     if geo_error is not None:
         raise YouTubeGeoRestrictedError() from geo_error
+    # A bot gate is actionable, so name it. A retry from the same IP cannot
+    # pass it; fresh cookies or an uploaded file can.
+    if any(is_bot_check_error(error) for error in (errors or [])):
+        raise YouTubeBotCheckError(public_download_error(errors[-1]))
     return None
 
 

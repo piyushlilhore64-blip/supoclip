@@ -55,7 +55,11 @@ from ..pool_timeout import pool_busy
 from ...workers.progress import ProgressTracker
 from ...config import get_config
 from ...youtube_utils import async_get_youtube_video_info, canonical_youtube_url, has_verified_duration
-from ...youtube_proxy import YouTubeAgeRestrictedError, YouTubeGeoRestrictedError
+from ...youtube_proxy import (
+    YouTubeAgeRestrictedError,
+    YouTubeGeoRestrictedError,
+    is_bot_check_error,
+)
 from ...stream_source import (
     PREFLIGHT_DEADLINE_SECONDS as STREAM_PREFLIGHT_DEADLINE_SECONDS,
     StreamDurationUnavailableError,
@@ -110,6 +114,37 @@ def _duration_unavailable_error(platform: str) -> HTTPException:
     )
 
 
+def _youtube_bot_check_error(exc: BaseException) -> HTTPException:
+    """YouTube wants a signed-in session; say so instead of "try again"."""
+    from ...youtube_cookies import cookies_configured, last_cookie_error
+
+    problem = last_cookie_error()
+    if problem:
+        message = (
+            f"The YouTube cookies saved on this server aren't usable: {problem} "
+            "Update them in Admin settings, or upload the video file. "
+            "No minutes were used."
+        )
+    elif cookies_configured():
+        message = (
+            "YouTube rejected the saved YouTube cookies, which have probably expired. "
+            "Export fresh cookies in Admin settings, or upload the video file. "
+            "No minutes were used."
+        )
+    else:
+        message = (
+            "YouTube asked this server to confirm it isn't a bot for this video, "
+            "so we couldn't read its length. Add YouTube cookies in Admin settings "
+            "(or set YOUTUBE_COOKIES) and try again, or upload the video file. "
+            "No minutes were used."
+        )
+    logger.warning("YouTube metadata preflight hit the bot check: %s", exc)
+    return HTTPException(
+        status_code=503,
+        detail={"code": "YOUTUBE_BOT_CHECK", "message": message},
+    )
+
+
 async def _preflight_youtube_source(url: str, duration_limit: int) -> Dict[str, Any]:
     """Check duration before creating a task or consuming a generation."""
     # wait_for cancels the awaiting task when this elapses. A yt-dlp call already
@@ -160,7 +195,9 @@ async def _preflight_youtube_source(url: str, duration_limit: int) -> Dict[str, 
                 ),
             },
         ) from None
-    except Exception:
+    except Exception as exc:
+        if is_bot_check_error(exc):
+            raise _youtube_bot_check_error(exc) from None
         raise HTTPException(
             status_code=503,
             detail={
