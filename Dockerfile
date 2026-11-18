@@ -42,6 +42,8 @@ RUN uv venv .venv && \
 COPY backend/src/ ./src/
 COPY backend/fonts/ ./fonts/
 COPY backend/transitions/ ./transitions/
+COPY scripts/render-entrypoint.sh /usr/local/bin/render-entrypoint.sh
+RUN chmod +x /usr/local/bin/render-entrypoint.sh
 
 RUN mkdir -p /app/uploads /app/clips /app/logs /tmp
 
@@ -50,4 +52,4 @@ ENV PYTHONUNBUFFERED=1
 
 # Render (and similar platforms) inject PORT at runtime.
 EXPOSE 8000
-CMD ["sh", "-c", ".venv/bin/uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["/usr/local/bin/render-entrypoint.sh"]
