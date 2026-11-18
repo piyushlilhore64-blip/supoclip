@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 import pytest
+from fastapi import HTTPException
 
 from src import youtube_innertube
 
@@ -224,3 +226,38 @@ def test_proxy_or_data_api_paths_skip_the_probe(monkeypatch):
     assert called == []
 
     assert youtube_utils.fetch_youtube_player_metadata("not a youtube link") is None
+
+
+def test_the_preflight_passes_the_gate_through(monkeypatch):
+    """A missing import here used to turn every gate into "couldn't verify"."""
+    from src.api.routes import tasks
+    from src.youtube_proxy import YouTubeBotCheckError
+
+    def _gate(*_args, **_kwargs):
+        raise YouTubeBotCheckError("Sign in to confirm you\u2019re not a bot")
+
+    monkeypatch.setattr(tasks, "fetch_youtube_player_metadata", _gate)
+
+    with pytest.raises(YouTubeBotCheckError):
+        asyncio.run(
+            tasks._read_youtube_metadata("https://www.youtube.com/watch?v=jNQXAC9IVRw", 30.0)
+        )
+
+
+def test_a_failed_preflight_names_its_exception(monkeypatch, caplog):
+    from src.api.routes import tasks
+
+    async def _nothing(_url, _timeout):
+        raise RuntimeError("all providers refused")
+
+    monkeypatch.setattr(tasks, "_read_youtube_metadata", _nothing)
+
+    with caplog.at_level("WARNING", logger="src.api.routes.tasks"):
+        with pytest.raises(HTTPException) as raised:
+            asyncio.run(
+                tasks._preflight_youtube_source("https://www.youtube.com/watch?v=jNQXAC9IVRw", 3600)
+            )
+
+    assert raised.value.status_code == 503
+    assert raised.value.detail["code"] == "VIDEO_METADATA_UNAVAILABLE"
+    assert "RuntimeError: all providers refused" in caplog.text

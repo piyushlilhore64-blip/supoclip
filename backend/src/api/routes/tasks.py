@@ -62,6 +62,7 @@ from ...youtube_utils import (
 )
 from ...youtube_proxy import (
     YouTubeAgeRestrictedError,
+    YouTubeBotCheckError,
     YouTubeGeoRestrictedError,
     is_bot_check_error,
 )
