@@ -34,13 +34,38 @@ import srt
 
 from datetime import timedelta
 
-try:
-    import whisper as _whisper
+# Local Whisper is an optional transcription backend. Importing it pulls in
+# PyTorch (hundreds of MB of resident memory), so the import is deferred until a
+# job actually transcribes locally; hosted deployments use AssemblyAI and never
+# pay for torch. These names keep the old module-level contract: they read as
+# unavailable until _load_whisper() has run.
+_whisper = None
 
-    _WHISPER_AVAILABLE = True
-except ImportError:  # pragma: no cover - optional transcription backend
-    _whisper = None
-    _WHISPER_AVAILABLE = False
+_WHISPER_AVAILABLE: Optional[bool] = None
+
+_whisper_import_attempted = False
+
+
+def _load_whisper():
+    """Import ``whisper`` once, on first use, and return the module (or None).
+
+    Keeping this lazy means the API and the worker processes start without
+    PyTorch loaded, which is what lets them share a small instance.
+    """
+    global _whisper, _WHISPER_AVAILABLE, _whisper_import_attempted
+
+    if not _whisper_import_attempted:
+        _whisper_import_attempted = True
+        try:
+            import whisper as whisper_module
+        except ImportError:  # pragma: no cover - optional transcription backend
+            _whisper = None
+            _WHISPER_AVAILABLE = False
+        else:
+            _whisper = whisper_module
+            _WHISPER_AVAILABLE = True
+
+    return _whisper
 
 from ..config import get_config
 
@@ -139,6 +164,7 @@ ANALYSIS_UTTERANCE_SPLIT_THRESHOLD_MS = 45_000
 ANALYSIS_UTTERANCE_SPLIT_THRESHOLD_WORDS = 80
 
 _WHISPER_MODEL_CACHE: Dict[str, Any] = {}
+
 
 FINAL_VIDEO_CRF = 19
 

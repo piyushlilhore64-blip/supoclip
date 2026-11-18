@@ -20,9 +20,8 @@ from .common import (
     ANALYSIS_UTTERANCE_SPLIT_THRESHOLD_MS,
     ANALYSIS_UTTERANCE_SPLIT_THRESHOLD_WORDS,
     TRANSCRIPT_CACHE_SCHEMA_VERSION,
-    _WHISPER_AVAILABLE,
     _WHISPER_MODEL_CACHE,
-    _whisper,
+    _load_whisper,
     logger,
 )
 from .ffmpeg import (
@@ -176,13 +175,14 @@ def _assemblyai_speech_models_value(speech_model: str) -> List[str]:
 
 def _get_whisper_model(model_name: str = "base"):
     """Load and cache a Whisper model by name."""
-    if not _WHISPER_AVAILABLE:
+    whisper = _load_whisper()
+    if whisper is None:
         raise RuntimeError(
             "Whisper is not installed. Install it with: uv add openai-whisper"
         )
     if model_name not in _WHISPER_MODEL_CACHE:
         logger.info("Loading Whisper model: %s", model_name)
-        _WHISPER_MODEL_CACHE[model_name] = _whisper.load_model(model_name)
+        _WHISPER_MODEL_CACHE[model_name] = whisper.load_model(model_name)
     return _WHISPER_MODEL_CACHE[model_name]
 
 
