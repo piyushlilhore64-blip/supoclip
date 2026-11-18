@@ -54,7 +54,12 @@ from ...workers.job_queue import JobQueue
 from ..pool_timeout import pool_busy
 from ...workers.progress import ProgressTracker
 from ...config import get_config
-from ...youtube_utils import async_get_youtube_video_info, canonical_youtube_url, has_verified_duration
+from ...youtube_utils import (
+    async_get_youtube_video_info,
+    canonical_youtube_url,
+    fetch_youtube_player_metadata,
+    has_verified_duration,
+)
 from ...youtube_proxy import (
     YouTubeAgeRestrictedError,
     YouTubeGeoRestrictedError,
@@ -114,6 +119,10 @@ def _duration_unavailable_error(platform: str) -> HTTPException:
     )
 
 
+# The player endpoint is a convenience path; yt-dlp still owns the answer.
+PLAYER_PROBE_TIMEOUT_SECONDS = 12.0
+
+
 def _youtube_bot_check_error(exc: BaseException) -> HTTPException:
     """YouTube wants a signed-in session; say so instead of "try again"."""
     from ...youtube_cookies import cookies_configured, last_cookie_error
@@ -145,16 +154,39 @@ def _youtube_bot_check_error(exc: BaseException) -> HTTPException:
     )
 
 
+async def _read_youtube_metadata(url: str, timeout_seconds: float) -> Dict[str, Any] | None:
+    """One length, from the cheapest source that can answer.
+
+    The player endpoint answers in well under a second and states the sign-in
+    gate plainly. Running yt-dlp here costs seconds of CPU per player client, so
+    on a small instance it holds the container past this deadline and the user
+    waits minutes for a timeout instead of reading the reason.
+    """
+    try:
+        fast = await asyncio.wait_for(
+            asyncio.to_thread(fetch_youtube_player_metadata, url),
+            timeout=min(timeout_seconds, PLAYER_PROBE_TIMEOUT_SECONDS),
+        )
+    except (YouTubeBotCheckError, YouTubeAgeRestrictedError, YouTubeGeoRestrictedError):
+        raise
+    except Exception as exc:
+        logger.debug("YouTube player probe did not answer for %s: %s", url, exc)
+        fast = None
+    if fast is not None:
+        return fast
+    return await asyncio.wait_for(
+        async_get_youtube_video_info(url, deadline=time.monotonic() + timeout_seconds),
+        timeout=timeout_seconds,
+    )
+
+
 async def _preflight_youtube_source(url: str, duration_limit: int) -> Dict[str, Any]:
     """Check duration before creating a task or consuming a generation."""
     # wait_for cancels the awaiting task when this elapses. A yt-dlp call already
     # running inside asyncio.to_thread can finish in the background.
     timeout_seconds = get_config().youtube_preflight_timeout_seconds
     try:
-        metadata = await asyncio.wait_for(
-            async_get_youtube_video_info(url, deadline=time.monotonic() + timeout_seconds),
-            timeout=timeout_seconds,
-        )
+        metadata = await _read_youtube_metadata(url, timeout_seconds)
         if metadata is None:
             raise ValueError("No metadata provider answered")
         if metadata.get("age_restricted"):

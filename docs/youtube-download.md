@@ -2,6 +2,10 @@
 
 SupoClip can download YouTube media with `yt-dlp` through a residential proxy, then keep that media so later edits do not fetch it again. The proxy path is off until `YOUTUBE_PROXY_URL` is set. A datacenter IP (the production host is in this situation) gets YouTube's "Sign in to confirm you're not a bot" page from plain `yt-dlp`.
 
+## How the length check stays fast
+
+The preflight reads one small JSON response from YouTube's player endpoint before it considers `yt-dlp` (for example, 0.2 s instead of several seconds of extraction). That response carries the same `videoDetails` length and title, and its `playabilityStatus` says plainly whether the request was asked to sign in, so a bot check comes back with the cookie guidance instead of a timeout. `yt-dlp` still runs whenever the endpoint cannot answer: a proxy or Data API key is configured, the endpoint changes, or the video is private, deleted or live. The same probe sends the configured cookies, so an expired export is reported as expired rather than as a generic failure. Nothing needs to be configured to get this.
+
 ## Free fix: a signed-in cookie export
 
 `YOUTUBE_COOKIES` (or the same field in Admin settings) sends a browser session with the metadata preflight and with every yt-dlp download, with or without a proxy. It costs nothing and needs no third-party account.

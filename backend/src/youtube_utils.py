@@ -23,6 +23,7 @@ from .config import get_config
 from .download_progress import DownloadRecovery, report_download_recovery
 from .media.ffmpeg import ffprobe_video_size
 from .youtube_cookies import youtube_cookiefile
+from . import youtube_innertube
 from .youtube_proxy import (
     YOUTUBE_DOWNLOAD_PROVIDER_YTDLP_PROXY,
     ByteBudget,
@@ -33,6 +34,7 @@ from .youtube_proxy import (
     extract_video_info,
     YouTubeBotCheckError,
     YouTubeDownloadError,
+    YouTubeAgeRestrictedError,
     YouTubeGeoRestrictedError,
     is_bot_check_error,
     is_geo_restricted_error,
@@ -442,6 +444,42 @@ def fetch_video_info(url: str) -> Optional[Dict[str, Any]]:
     Backward-compatible metadata lookup entrypoint.
     """
     return get_youtube_video_info(url)
+
+
+def fetch_youtube_player_metadata(url: str) -> Optional[Dict[str, Any]]:
+    """Read length and title from YouTube's JSON player endpoint.
+
+    A preflight only needs a length, and yt-dlp spends seconds of CPU on player
+    clients before answering. This costs one small HTTPS POST, and it reports
+    the sign-in gate directly instead of as a generic failure. Returns None
+    whenever it cannot help, so the caller keeps yt-dlp as the real path.
+    """
+    video_id = get_youtube_video_id(url)
+    if not video_id:
+        return None
+    config = get_config()
+    if proxy_configured() or config.resolve_youtube_data_api_key():
+        # Both paths answer the gate themselves: the proxy from another IP, the
+        # Data API from a surface YouTube does not challenge.
+        return None
+    try:
+        result = youtube_innertube.fetch_player_result(
+            video_id, cookie_file=youtube_cookiefile()
+        )
+    except youtube_innertube.InnertubeUnavailable as exc:
+        logger.debug("YouTube player probe unavailable for %s: %s", video_id, exc)
+        return None
+
+    status = result.get("status")
+    if status == youtube_innertube.STATUS_BOT_CHECK:
+        raise YouTubeBotCheckError(str(result.get("reason") or ""))
+    if status == youtube_innertube.STATUS_AGE_RESTRICTED:
+        raise YouTubeAgeRestrictedError()
+    if status == youtube_innertube.STATUS_GEO_RESTRICTED:
+        raise YouTubeGeoRestrictedError()
+    if status == youtube_innertube.STATUS_OK:
+        return result.get("video")
+    return None
 
 
 async def async_get_youtube_video_info(

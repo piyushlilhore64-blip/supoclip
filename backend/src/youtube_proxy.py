@@ -338,6 +338,8 @@ def is_bot_check_error(exc: BaseException | str) -> bool:
     Both mean the same thing operationally: the request needs a signed-in
     session, so the fix is fresh YouTube cookies rather than a retry.
     """
+    if isinstance(exc, YouTubeBotCheckError):
+        return True
     text = str(exc).lower().replace("\u2019", "'").replace("\u2018", "'")
     return any(marker in text for marker in _BOT_CHECK_MARKERS)
 
