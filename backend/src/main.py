@@ -62,11 +62,21 @@ def create_app(
         """Application lifespan: startup and shutdown events."""
         logger.info("🚀 Starting SupoClip API...")
         try:
-            await init_db()
-            logger.info("✅ Database initialized")
-            async with AsyncSessionLocal() as db:
-                await load_runtime_settings_cache(db)
-            logger.info("✅ Runtime settings loaded")
+            try:
+                await init_db()
+                logger.info("✅ Database initialized")
+            except Exception:
+                logger.exception(
+                    "Database initialization failed; API will start but database-backed features require a reachable DATABASE_URL and migrations"
+                )
+            try:
+                async with AsyncSessionLocal() as db:
+                    await load_runtime_settings_cache(db)
+                logger.info("✅ Runtime settings loaded")
+            except Exception:
+                logger.exception(
+                    "Could not load runtime settings from the database; falling back to environment configuration"
+                )
             try:
                 # Pre-inbox Discord webhooks become admin-managed rows, once (docs/feedback.md).
                 from .feedback.webhooks import import_env_webhooks
@@ -76,16 +86,23 @@ def create_app(
             except Exception:
                 logger.exception("Could not import the environment feedback webhooks")
 
-            pool = await queue_adapter.get_pool()
-            logger.info("✅ Job queue initialized")
             try:
-                # A worker compares this with its own disk before it renders
-                # clips that only this API's disk could serve.
-                from .local_volume import API_VOLUME_KEY, volume_id
-
-                await pool.set(API_VOLUME_KEY, volume_id(runtime_config.temp_dir))
+                pool = await queue_adapter.get_pool()
+                logger.info("✅ Job queue initialized")
             except Exception:
-                logger.warning("Could not publish the API media volume id", exc_info=True)
+                pool = None
+                logger.exception(
+                    "Job queue unavailable at startup; API will run but background jobs cannot be enqueued until Redis is reachable"
+                )
+            if pool is not None:
+                try:
+                    # A worker compares this with its own disk before it renders
+                    # clips that only this API's disk could serve.
+                    from .local_volume import API_VOLUME_KEY, volume_id
+
+                    await pool.set(API_VOLUME_KEY, volume_id(runtime_config.temp_dir))
+                except Exception:
+                    logger.warning("Could not publish the API media volume id", exc_info=True)
 
             yield
         finally:

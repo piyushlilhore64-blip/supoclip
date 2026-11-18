@@ -20,6 +20,16 @@ DEFAULT_DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql+asyncpg://localhost:5432/supoclip"
 )
 
+
+def _normalize_database_url(url: str) -> str:
+    """Normalize common provider URL schemes for SQLAlchemy's asyncpg driver."""
+    if url.startswith("postgres://"):
+        return "postgresql+asyncpg://" + url[len("postgres://"):]
+    if url.startswith("postgresql://") and "+" not in url.split("://", 1)[0]:
+        return "postgresql+asyncpg://" + url[len("postgresql://"):]
+    return url
+
+
 _database_url_override: str | None = None
 _engine_override: AsyncEngine | None = None
 _session_maker_override: async_sessionmaker[AsyncSession] | None = None
@@ -71,7 +81,8 @@ def _build_engine(database_url: str) -> AsyncEngine:
 
 
 def get_database_url() -> str:
-    return _database_url_override or os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
+    url = _database_url_override or os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
+    return _normalize_database_url(url)
 
 
 def configure_database(
