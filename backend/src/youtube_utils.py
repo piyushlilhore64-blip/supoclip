@@ -467,12 +467,12 @@ def fetch_youtube_player_metadata(url: str) -> Optional[Dict[str, Any]]:
             video_id, cookie_file=youtube_cookiefile()
         )
     except youtube_innertube.InnertubeUnavailable as exc:
-        logger.debug("YouTube player probe unavailable for %s: %s", video_id, exc)
+        logger.warning("YouTube player probe unavailable for %s: %s", video_id, exc)
         return None
 
     status = result.get("status")
     if status != youtube_innertube.STATUS_OK:
-        logger.info(
+        logger.warning(
             "YouTube player probe for %s reported %s (%s)",
             video_id,
             status,

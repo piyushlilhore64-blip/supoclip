@@ -230,6 +230,11 @@ async def _preflight_youtube_source(url: str, duration_limit: int) -> Dict[str, 
     except Exception as exc:
         if is_bot_check_error(exc):
             raise _youtube_bot_check_error(exc) from None
+        # Name the culprit: "couldn't verify the length" alone leaves an operator
+        # with nothing to act on in the log.
+        logger.warning(
+            "YouTube preflight failed for %s: %s: %s", url, type(exc).__name__, exc
+        )
         raise HTTPException(
             status_code=503,
             detail={
