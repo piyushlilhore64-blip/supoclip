@@ -269,7 +269,6 @@ def transcribe_with_youtube_captions(video_url: str) -> Optional[str]:
 
     temp_dir = Path(get_config().temp_dir)
     temp_dir.mkdir(parents=True, exist_ok=True)
-    subs_path = temp_dir / f"{video_id}.en.vtt"
 
     try:
         ydl_opts = {
@@ -277,7 +276,9 @@ def transcribe_with_youtube_captions(video_url: str) -> Optional[str]:
             "no_warnings": True,
             "writesubtitles": True,
             "writeautomaticsub": True,
-            "subtitleslangs": ["en"],
+            # Prefer English, but accept any language YouTube offers so the
+            # free fallback still works on non-English videos.
+            "subtitleslangs": ["en", "en.*", "all", "-live_chat"],
             "subtitlesformat": "vtt",
             "skip_download": True,
             "outtmpl": str(temp_dir / video_id),
@@ -289,8 +290,12 @@ def transcribe_with_youtube_captions(video_url: str) -> Optional[str]:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([video_url])
 
-        if subs_path.exists():
-            text = subs_path.read_text(encoding="utf-8")
+        candidates = sorted(
+            temp_dir.glob(f"{video_id}*.vtt"),
+            key=lambda p: (0 if re.search(r"\.en([.\-]|$)", p.name) else 1, p.name),
+        )
+        for subs_path in candidates:
+            text = subs_path.read_text(encoding="utf-8", errors="ignore")
             lines = []
             for line in text.splitlines():
                 stripped = line.strip()
@@ -304,9 +309,10 @@ def transcribe_with_youtube_captions(video_url: str) -> Optional[str]:
                     and not re.match(r"^\d+$", stripped)
                 ):
                     lines.append(stripped)
-            return " ".join(lines)
+            if lines:
+                return " ".join(lines)
 
-        logger.warning("No English captions found for video %s", video_id)
+        logger.warning("No captions found for video %s", video_id)
         return None
 
     except Exception as e:
@@ -331,6 +337,8 @@ def get_video_transcript(
     Dispatches to AssemblyAI, local Whisper, or YouTube captions based on
     ``TRANSCRIPTION_PROVIDER``. ``source_url`` enables the youtube_captions
     provider, which needs the original URL rather than a local file path.
+    When AssemblyAI is selected but no key is configured, fall back to free
+    YouTube captions for a YouTube source before giving up.
     """
     logger.info(f"Getting transcript for: {video_path}")
     runtime_config = get_config()
@@ -345,6 +353,26 @@ def get_video_transcript(
                 "Pass source_url to get_video_transcript()."
             )
         return _get_transcript_with_youtube_captions(source_url)
+
+    # assemblyai (default): if no key, try a free path instead of a hard fail.
+    if not (getattr(runtime_config, "assembly_ai_api_key", None) or "").strip():
+        if source_url:
+            logger.info(
+                "ASSEMBLY_AI_API_KEY is not set; trying YouTube captions for a free transcript"
+            )
+            try:
+                return _get_transcript_with_youtube_captions(source_url)
+            except Exception as caption_error:
+                logger.warning(
+                    "YouTube caption fallback failed: %s", caption_error
+                )
+        raise RuntimeError(
+            "No transcription provider is ready. "
+            "For a free transcript, set TRANSCRIPTION_PROVIDER=youtube_captions for a YouTube video that has captions, "
+            "or TRANSCRIPTION_PROVIDER=whisper to transcribe locally (slower, downloads a model). "
+            "Otherwise add ASSEMBLY_AI_API_KEY."
+        )
+
     return _get_transcript_with_assemblyai(video_path, speech_model, runtime_config)
 
 
